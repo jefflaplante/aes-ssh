@@ -9,6 +9,18 @@ function usage() {
   exit 0
 }
 
+function check_pkcs8() {
+  if [ -f "$1" ]; then
+    grep -q -e "^-----BEGIN PUBLIC KEY-----$" $1
+    if [ ! $? -eq 0 ]; then
+      echo "Error - Public key is not pkcs8 format"
+      exit 2
+    fi
+  else
+    exit 3
+  fi
+}
+
 function encrypt() {
   # Create UUID
   UUID=$(uuidgen)
@@ -22,14 +34,45 @@ function encrypt() {
   FILE_TO_ENCRYPT=$2
   FILE_ENCRYPTED=$FILE_TO_ENCRYPT.$UUID.enc
 
+  # Check for file
+  if [ ! -f "$PUB_KEY" ]
+  then
+    echo "File does not exist: $PUB_KEY"
+    exit 3
+  fi
+
+  check_pkcs8 $PUB_KEY
+
+  if [ ! -f "$FILE_TO_ENCRYPT" ]
+  then
+    echo "Files does not exist: $FILE_TO_ENCRYPT"
+    exit 4
+  fi
+
   # Create temp key
   openssl rand -out $KEY 32
 
   # Encrypt file with temporary key
   openssl aes-256-cbc -in $FILE_TO_ENCRYPT -out $FILE_ENCRYPTED -pass file:$KEY -pbkdf2
+  if [ $? -eq 0 ] 
+  then 
+    echo "encrypted file with $KEY" 
+  else 
+    echo "error encrypting file" >&2
+    rm $KEY
+    exit 86
+  fi
 
   # Encrypt key with ssh public key
   openssl pkeyutl -encrypt -pubin -inkey $PUB_KEY -in $KEY -out $KEY_ENCRYPTED
+  if [ $? -eq 0 ] 
+  then 
+    echo "encrypted $KEY_ENCRYPTED with $1" 
+  else 
+    echo "error encrypting $KEY" >&2
+    rm $KEY
+    exit 64 
+  fi
 
   # Remove temp key
   rm $KEY
