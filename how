@@ -1,14 +1,17 @@
-# Create RSA keypair
-ssh-keygen -t rsa -f ./omega_id_rsa -m pem
+# Create an RSA SSH keypair (-m pem creates the pair in RSA format instead of openssh)
+# (Name the keypair whatever you wish. For this example I'm using foo_id_rsa.)
+ssh-keygen -t rsa -f ./foo_id_rsa -m pem
 
 # Convert public key to PKCS8 format
-ssh-keygen -e -f ./omega_id_rsa.pub -m PKCS8 > ./omega_id_rsa.pub.pkcs8
+ssh-keygen -e -f ./foo_id_rsa.pub -m PKCS8 > ./foo_id_rsa.pub8
 
-# Get a public key from a private key
-ssh-keygen -e -f omega_id_rsa -m pem > omega_id_rsa.pub
+# Incidental - Get a public key from a private key if you've lost the public portion
+ssh-keygen -e -f foo_id_rsa -m pem > foo_id_rsa.pub
 
-# Transform an openssh private key to RSA PEM format by asking to change it's passphrase
-cp omega_id_rsa omega_id_rsa.pem && ssh-keygen -p -N "" -m pem -f omega_id_rsa.pem
+# Transform an existing openssh formatted private key to RSA PEM format by asking
+# to change it's passphrase. Be sure to reset the passphrase if you had one set 
+# previously instead of passing -N ""
+cp foo_id_rsa foo_id_rsa.pem && ssh-keygen -p -N "" -m pem -f foo_id_rsa.pem
 
 ---------------------------------------
 
@@ -17,11 +20,11 @@ cp omega_id_rsa omega_id_rsa.pem && ssh-keygen -p -N "" -m pem -f omega_id_rsa.p
 # Create temp key
 openssl rand -out key 32
 
-# Encrypt file with temporary key
-openssl aes-256-cbc -in foo -out foo.enc -pass file:key -pbkdf2
+# Use the AES 256 bit cipher to encrypt a file with the temp key
+openssl aes-256-cbc -in bar -out bar.enc -pass file:key -pbkdf2
 
-# Encrypt key with ssh public key
-openssl pkeyutl -encrypt -pubin -inkey omega_id_rsa.pub.pkcs8 -in key -out key.enc
+# Encrypt the temporary key with a ssh public key in PKCS8 format
+openssl pkeyutl -encrypt -pubin -inkey foo_id_rsa.pub8 -in key -out key.enc
 
 # Remove the temporary key
 rm key
@@ -30,8 +33,9 @@ rm key
 
 # Decryption
 
-# Decrypt key with RSA private key in PEM format
-openssl pkeyutl -decrypt -inkey omega_id_rsa -in key.enc -out key
+# Decrypt AES key with a matching (matching the public key used to encrypt)
+# SSH private key in RSA PEM format
+openssl pkeyutl -decrypt -inkey foo_id_rsa -in key.enc -out key
 
-# Decrypt file with key 
-openssl aes-256-cbc -d -in foo.enc -out foo -pass file:key -pbkdf2
+# Decrypt file with decrypted AES key 
+openssl aes-256-cbc -d -in bar.enc -out bar -pass file:key -pbkdf2
