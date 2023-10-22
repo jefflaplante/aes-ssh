@@ -10,17 +10,20 @@ VERBOSE=0
 QUIET=0
 
 function usage() { 
-  echo "Usage: $0 -d [ -p RSA_KEY|AES_KEY ] [ -f FILE_TO_(EN|DE)CRYPT ]" 1>&2
-  echo ""
-  echo "  -h  Display usage information"
-  echo "  -d  Decrypt mode. Encrypt mode is default. Specify -d to decyrpt files."
-  echo "  -p <RSA private or public key>  Specify a RSA key for en|decryting AES key"
-  echo "  -f <file>  Specify the file to en|decrypt"
-  echo "  -a <aes_key>  Specify the encrypted AES key to use when decrypting a file"
-  echo "  -o <output_file>  Specify the filename to save the decrypted file as"
-  echo "  -z  tar.gz encrypted AES key and file together"
-  echo "  -v  Verbose output"
-  echo "  -q  Be quiet"
+  cat <<- "EOF"
+    Usage: $0 -d [ -p RSA_KEY|AES_KEY ] [ -f FILE_TO_(EN|DE)CRYPT ]
+  
+      -h  Display usage information
+      -d  Decrypt mode. Encrypt mode is default. Specify -d to decyrpt files.
+      -p <RSA private or public key>  Specify a RSA key for en|decryting AES key
+      -f <file>  Specify the file to en|decrypt
+      -a <aes_key>  Specify the encrypted AES key to use when decrypting a file
+      -o <output_file>  Specify the filename to save the decrypted file as
+      -z  tar.gz encrypted AES key and file together
+      -v  Verbose output
+      -q  Be quiet
+EOF
+
   exit 0
 }
 
