@@ -7,9 +7,20 @@ FILE_IN=""
 FILE_OUT=""
 ARCHIVE=0
 VERBOSE=0
+QUIET=0
 
 function usage() { 
   echo "Usage: $0 -d [ -p RSA_KEY|AES_KEY ] [ -f FILE_TO_(EN|DE)CRYPT ]" 1>&2
+  echo ""
+  echo "  -h  Display usage information"
+  echo "  -d  Decrypt mode. Encrypt mode is default. Specify -d to decyrpt files."
+  echo "  -p <RSA private or public key>  Specify a RSA key for en|decryting AES key"
+  echo "  -f <file>  Specify the file to en|decrypt"
+  echo "  -a <aes_key>  Specify the encrypted AES key to use when decrypting a file"
+  echo "  -o <output_file>  Specify the filename to save the decrypted file as"
+  echo "  -z  tar.gz encrypted AES key and file together"
+  echo "  -v  Verbose output"
+  echo "  -q  Be quiet"
   exit 0
 }
 
@@ -59,7 +70,7 @@ function convert_pvt_openssh_to_pem() {
 
   cp $PRIV_KEY $PEM
 
-  [ $VERBOSE -eq 1 ] && echo "Private key: $PRIV_KEY PEM: $PEM"
+  [ $VERBOSE -eq 1 ] && echo "Private key: $PRIV_KEY PEM: $PEM" >&2
 
   OUTPUT=$(ssh-keygen -p -N "" -m pem -f $PEM)
   if [ $? -eq 0 ]; then
@@ -113,7 +124,7 @@ function encrypt() {
   if [ $? -eq 0 ]; then 
     [ $VERBOSE -eq 1 ] && echo "Encrypted file with $AES_KEY" >&2
   else 
-    echo "error encrypting file" >&2
+    echo "Error encrypting file" >&2
     rm $AES_KEY
     exit 86
   fi
@@ -123,7 +134,7 @@ function encrypt() {
   if [ $? -eq 0 ]; then 
     [ $VERBOSE -eq 1 ] && echo "Encrypted $AES_KEY_ENC with $1" >&2
   else 
-    echo "error encrypting $AES_KEY" >&2
+    echo "Error encrypting $AES_KEY" >&2
     rm $AES_KEY
     exit 64 
   fi
@@ -138,12 +149,12 @@ function encrypt() {
   if [ $ARCH -eq 1 ]; then
     FILE_ARCH="$UUID.tar.gz"
     tar zcf $FILE_ARCH $AES_KEY_ENC $FILE_ENCRYPTED && rm $AES_KEY_ENC $FILE_ENCRYPTED 
-    [ $VERBOSE -eq 1 ] && echo "Public Key Used: $RSA_PUB_KEY"
-    [ $VERBOSE -eq 1 ] && echo "Encrypted key and file archive: $FILE_ARCH"
+    [ $QUIET -eq 0 ] && echo "Public Key Used: $RSA_PUB_KEY"
+    [ $QUIET -eq 0 ] && echo "Encrypted key and file archive: $FILE_ARCH"
   else
-    [ $VERBOSE -eq 1 ] && echo "Public Key Used: $RSA_PUB_KEY"
-    [ $VERBOSE -eq 1 ] && echo "Encrypted Key:   $AES_KEY_ENC"
-    [ $VERBOSE -eq 1 ] && echo "Encrypted File:  $FILE_ENCRYPTED"
+    [ $QUIET -eq 0 ] && echo "Public Key Used: $RSA_PUB_KEY"
+    [ $QUIET -eq 0 ] && echo "Encrypted Key:   $AES_KEY_ENC"
+    [ $QUIET -eq 0 ] && echo "Encrypted File:  $FILE_ENCRYPTED"
   fi
 }
 
@@ -175,10 +186,10 @@ function decrypt() {
     RM_TMP_PVT_KEY=1
   fi
 
-  [ $VERBOSE -eq 1 ] && echo "decrypt AES key"
+  [ $VERBOSE -eq 1 ] && echo "Decrypt AES key" >&2
   openssl pkeyutl -decrypt -inkey $RSA_PVT_KEY -in $KEY_ENC -out .tmp_key
 
-  [ $VERBOSE -eq 1 ] && echo "decrypt ciphertext with AES key"
+  [ $VERBOSE -eq 1 ] && echo "Decrypt ciphertext with AES key" >&2
   openssl aes-256-cbc -d -in $FILE_ENC -out $FILE_OUT -pass file:.tmp_key -pbkdf2
   rm .tmp_key
   [ $RM_TMP_PVT_KEY -eq 1 ] && rm $RSA_PVT_KEY
@@ -246,7 +257,7 @@ function main() {
   fi
 }
 
-while getopts "hdp:f:o:a:zv" options; do
+while getopts "hdp:f:o:a:zvq" options; do
   case "${options}" in
     h)
       usage
@@ -271,6 +282,9 @@ while getopts "hdp:f:o:a:zv" options; do
       ;;
     v)
       VERBOSE=1
+      ;;
+    q)
+      QUIET=1
       ;;
     :)
       echo "Error: -${OPTARG} requires an argument" >&2
