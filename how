@@ -4,14 +4,11 @@ ssh-keygen -t rsa -f ./omega_id_rsa -m pem
 # Convert public key to PKCS8 format
 ssh-keygen -e -f ./omega_id_rsa.pub -m PKCS8 > ./omega_id_rsa.pub.pkcs8
 
-# Convert private key from RSA to PEM format
-
 # Get a public key from a private key
-ssh-keygen -e -f omega_id_rsa -m pem > omega_id_rsa.pub.pem
+ssh-keygen -e -f omega_id_rsa -m pem > omega_id_rsa.pub
 
-# Transform an openssh private key to PEM format by asking to change it's passphrase
-cp omega_id_rsa omega_id_rsa.pem
-ssh-keygen -p -N "" -m pem -f omega_id_rsa.pem
+# Transform an openssh private key to RSA PEM format by asking to change it's passphrase
+cp omega_id_rsa omega_id_rsa.pem && ssh-keygen -p -N "" -m pem -f omega_id_rsa.pem
 
 ---------------------------------------
 
@@ -26,13 +23,15 @@ openssl aes-256-cbc -in foo -out foo.enc -pass file:key -pbkdf2
 # Encrypt key with ssh public key
 openssl pkeyutl -encrypt -pubin -inkey omega_id_rsa.pub.pkcs8 -in key -out key.enc
 
+# Remove the temporary key
+rm key
+
 ---------------------------------------
 
 # Decryption
 
 # Decrypt key with RSA private key in PEM format
-openssl pkeyutl -decrypt -ssl -inkey omega_id_rsa.pem -in key.enc -out key.out
+openssl pkeyutl -decrypt -inkey omega_id_rsa -in key.enc -out key
 
 # Decrypt file with key 
-openssl aes-256-cbc -d -in foo.enc -out foo.out -pass file:key -pbkdf2
-
+openssl aes-256-cbc -d -in foo.enc -out foo -pass file:key -pbkdf2

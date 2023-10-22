@@ -1,0 +1,217 @@
+#! /bin/bash
+
+MODE="e"
+RSA_KEY=""
+AES_KEY_ENC=""
+FILE_IN=""
+FILE_OUT=""
+ARCHIVE=1
+VERBOSE=0
+
+function usage() { 
+  echo "Usage: $0 -d [ -p RSA_KEY|AES_KEY ] [ -f FILE_TO_(EN|DE)CRYPT ]" 1>&2
+  exit 0
+}
+
+function check_pkcs8() {
+  if [ -f "$1" ]; then
+    grep -q -e "^-----BEGIN PUBLIC KEY-----$" $1
+    if [ ! $? -eq 0 ]; then
+      echo "Error - Public key is not pkcs8 format"
+      exit 2
+    fi
+  else
+    exit 3
+  fi
+}
+
+function does_file_exist() {
+  if [ -z "$1" ]; then
+    echo "Empty string passed as a file reference."
+    exit 4
+  fi
+
+  if [ ! -f "$1" ]; then
+    echo "File does not exist: $1"
+    exit 3
+  fi
+}
+
+function encrypt() {
+  local RSA_PUB_KEY=$1
+  local FILE_TO_ENCRYPT=$2
+  local ARCH=$3
+  
+  local SUFFIX="enc"
+  local UUID=$(uuidgen)
+  local AES_KEY="key-$UUID"
+  local AES_KEY_ENC="$AES_KEY.$SUFFIX"
+  local FILE_ENCRYPTED="$FILE_TO_ENCRYPT.$UUID.$SUFFIX"
+
+  does_file_exist $RSA_PUB_KEY
+  check_pkcs8 $RSA_PUB_KEY
+  does_file_exist $FILE_TO_ENCRYPT
+  
+  # Create AES key
+  openssl rand -out $AES_KEY 32
+
+  # Encrypt file with temporary key
+  openssl aes-256-cbc -in $FILE_TO_ENCRYPT -out $FILE_ENCRYPTED -pass file:$AES_KEY -pbkdf2
+  if [ $? -eq 0 ]; then 
+    [ $VERBOSE -eq 1 ] && echo "encrypted file with $AES_KEY" >&2
+  else 
+    echo "error encrypting file" >&2
+    rm $KEY
+    exit 86
+  fi
+
+  # Encrypt AES key with ssh public key
+  openssl pkeyutl -encrypt -pubin -inkey $RSA_PUB_KEY -in $AES_KEY -out $AES_KEY_ENC
+  if [ $? -eq 0 ]; then 
+    [ $VERBOSE -eq 1 ] && echo "encrypted $AES_KEY_ENC with $1" >&2
+  else 
+    echo "error encrypting $AES_KEY" >&2
+    rm $AES_KEY
+    exit 64 
+  fi
+
+  # Remove temp key
+  rm $AES_KEY
+
+  # Should we tar it up?
+  if [ $ARCH -eq 1 ]; then
+    FILE_ARCH="$UUID.tar.gz"
+    tar zcvf $FILE_ARCH $AES_KEY_ENC $FILE_ENCRYPTED && rm $AES_KEY_ENC $FILE_ENCRYPTED
+    [ $VERBOSE -eq 1 ] && echo "Public Key Used: $RSA_PUB_KEY"
+    [ $VERBOSE -eq 1 ] && echo "Encrypted key and file archive: $FILE_ARCH"
+  else
+    [ $VERBOSE -eq 1 ] && echo "Public Key Used: $RSA_PUB_KEY"
+    [ $VERBOSE -eq 1 ] && echo "Encrypted Key:   $AES_KEY_ENC"
+    [ $VERBOSE -eq 1 ] && echo "Encrypted File:  $FILE_ENCRYPTED"
+  fi
+  
+}
+
+function decrypt() {
+  local RSA_PVT_KEY=$1
+  local KEY_ENC=$2
+  local FILE_ENC=$3
+  local FILE_OUT=$4
+
+  # If FILE_OUT is not set...
+  if [ -z $FILE_OUT ]; then
+    # ..and FILE_ENC has a suffix of .enc
+    echo "$FILE_ENC" | grep -q -e ".enc"
+    if [ $? -eq 0 ]; then
+      # set FILE_OUT to FILE_ENC without the .enc suffix
+      FILE_OUT=${FILE_ENC%.enc}
+    else
+      FILE_OUT="out"
+    fi
+  fi
+
+  [ $VERBOSE -eq 1 ] && echo "decrypt AES key"  
+  openssl pkeyutl -decrypt -inkey $RSA_PVT_KEY -in $KEY_ENC -out .tmp_key
+
+  [ $VERBOSE -eq 1 ] && echo "decrypt ciphertext with AES key"
+  openssl aes-256-cbc -d -in $FILE_ENC -out $FILE_OUT -pass file:.tmp_key -pbkdf2
+  rm .tmp_key
+}
+
+while getopts "hdp:f:o:a:zv" options; do
+  case "${options}" in
+    h)
+      usage
+      ;;
+    d)
+      MODE="d"
+      ;;
+    p)
+      RSA_KEY=${OPTARG}
+      ;;
+    f)
+      FILE_IN=${OPTARG}
+      ;;
+    o)
+      FILE_OUT=${OPTARG}
+      ;;
+    a)
+      AES_KEY_ENC=${OPTARG}
+      ;;
+    z)
+      ARCHIVE=1
+      ;;
+    v)
+      VERBOSE=1
+      ;;
+    :)
+      echo "Error: -${OPTARG} requires an argument"
+      exit 1
+      ;;
+    *)
+      exit 99
+      ;;
+  esac
+done
+
+# Check options for encryption before calling encrypt
+if [ "$MODE" = "e" ]; then
+  if [ ! -z "$RSA_KEY" ]; then
+    if [ ! -f "$RSA_KEY" ]; then
+      echo "$RSA_KEY was not found"
+      exit 7
+    fi
+  else
+    echo "Please specify a RSA public key to use with the [-p RSA_KEY] option"
+    exit 9
+  fi
+
+  if [ ! -z "$FILE_IN" ]; then
+    if [ ! -f "$FILE_IN" ]; then
+      echo "$FILE_IN was not found"
+      exit 11
+    fi
+  else
+    echo "Please specify a file to encrypt with the [-f FILE] option"
+    exit 15
+  fi
+
+  encrypt $RSA_KEY $FILE_IN $ARCHIVE
+fi
+
+# Check options for decryption before calling decrypt
+if [ "$MODE" = "d" ]; then
+  if [ ! -z "$RSA_KEY" ]; then
+    if [ ! -f "$RSA_KEY" ]; then
+      echo "$RSA_KEY was not found"
+      exit 7
+    fi
+  else
+    echo "Please specify a RSA private key to use with the [-p RSA_KEY] option"
+    exit 9
+  fi
+
+  if [ ! -z "$FILE_IN" ]; then
+    if [ ! -f "$FILE_IN" ]; then
+      echo "$FILE_IN was not found"
+      exit 11
+    fi
+  else
+    echo "Please specify a file to decrypt with the [-f FILE] option"
+    exit 15
+  fi
+
+ if [ ! -z "$AES_KEY_ENC" ]; then
+    if [ ! -f "$AES_KEY_ENC" ]; then
+      echo "$AES_KEY_ENC was not found"
+      exit 11
+    fi
+  else
+    echo "Please specify an ecrypted AES key to use with the [-a AES_KEY] option"
+    exit 17
+  fi
+  
+  decrypt $RSA_KEY $AES_KEY_ENC $FILE_IN $FILE_OUT
+fi
+
+exit 0
