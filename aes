@@ -5,7 +5,7 @@ RSA_KEY=""
 AES_KEY_ENC=""
 FILE_IN=""
 FILE_OUT=""
-ARCHIVE=1
+ARCHIVE=0
 VERBOSE=0
 
 function usage() { 
@@ -17,12 +17,27 @@ function check_pkcs8() {
   if [ -f "$1" ]; then
     grep -q -e "^-----BEGIN PUBLIC KEY-----$" $1
     if [ ! $? -eq 0 ]; then
-      echo "Error - Public key is not pkcs8 format"
-      exit 2
+      [ $VERBOSE -eq 1 ] && echo "Public key is not pkcs8 format"
+      return 1
     fi
   else
     exit 3
   fi
+
+  return 0
+}
+
+function convert_pkcs8() {
+  local RSA_PUB_KEY=$1
+  local RSA_PUB_KEY_PKCS8="${RSA_PUB_KEY%.pub}.pub8"
+  ssh-keygen -e -f $RSA_PUB_KEY -m PKCS8 > $RSA_PUB_KEY_PKCS8
+  if [ $? -eq 0 ]; then 
+    [ $VERBOSE -eq 1 ] && echo "Successfully converted public key to PKCS8 format"
+  else
+    echo "Error converting public key to PKCS8 format"
+    exit 77
+  fi
+  echo $RSA_PUB_KEY_PKCS8
 }
 
 function does_file_exist() {
@@ -44,12 +59,20 @@ function encrypt() {
   
   local SUFFIX="enc"
   local UUID=$(uuidgen)
-  local AES_KEY="key-$UUID"
+  local AES_KEY="key.$UUID"
   local AES_KEY_ENC="$AES_KEY.$SUFFIX"
   local FILE_ENCRYPTED="$FILE_TO_ENCRYPT.$UUID.$SUFFIX"
 
+  local RM_TMP_PKCS8=0
+
   does_file_exist $RSA_PUB_KEY
+
   check_pkcs8 $RSA_PUB_KEY
+  if [ $? -eq 1 ]; then
+    RSA_PUB_KEY=$(convert_pkcs8 $RSA_PUB_KEY)
+    RM_TMP_PKCS8=1
+  fi
+
   does_file_exist $FILE_TO_ENCRYPT
   
   # Create AES key
@@ -61,7 +84,7 @@ function encrypt() {
     [ $VERBOSE -eq 1 ] && echo "encrypted file with $AES_KEY" >&2
   else 
     echo "error encrypting file" >&2
-    rm $KEY
+    rm $AES_KEY
     exit 86
   fi
 
@@ -78,6 +101,9 @@ function encrypt() {
   # Remove temp key
   rm $AES_KEY
 
+  # Remove temp PKCS8 public key
+  [ $RM_TMP_PKCS8 -eq 1 ] && rm $RSA_PUB_KEY
+
   # Should we tar it up?
   if [ $ARCH -eq 1 ]; then
     FILE_ARCH="$UUID.tar.gz"
@@ -89,7 +115,6 @@ function encrypt() {
     [ $VERBOSE -eq 1 ] && echo "Encrypted Key:   $AES_KEY_ENC"
     [ $VERBOSE -eq 1 ] && echo "Encrypted File:  $FILE_ENCRYPTED"
   fi
-  
 }
 
 function decrypt() {
