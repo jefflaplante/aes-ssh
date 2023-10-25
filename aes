@@ -5,6 +5,7 @@ RSA_KEY=""
 AES_KEY_ENC=""
 FILE_IN=""
 FILE_OUT=""
+UNIQUE=0
 ARCHIVE=0
 VERBOSE=0
 QUIET=0
@@ -18,7 +19,8 @@ function usage() {
       -p <RSA private or public key>  Specify a RSA key for en|decryting AES key
       -f <file>  Specify the file to en|decrypt
       -a <aes_key>  Specify the encrypted AES key to use when decrypting a file
-      -o <output_file>  Specify the filename to save the decrypted file as
+      -o <output_file>  Specify the filename to save the (en|de)crypted file as
+      -u  Use UUID to generate unique file names
       -z  tar.gz encrypted AES key and file together
       -v  Verbose output
       -q  Be quiet
@@ -103,10 +105,17 @@ function encrypt() {
   
   local SUFFIX="enc"
   local UUID=$(uuidgen)
-  local AES_KEY="key.$UUID"
-  local AES_KEY_ENC="$AES_KEY.$SUFFIX"
-  local FILE_ENCRYPTED="$FILE_TO_ENCRYPT.$UUID.$SUFFIX"
+  local KEY="key"
 
+  if [ $UNIQUE -eq 1 ]; then
+    local AES_KEY="$KEY.$UUID"
+    local FILE_ENCRYPTED="$FILE_TO_ENCRYPT.$UUID.$SUFFIX"
+  else
+    local AES_KEY="$KEY"
+    local FILE_ENCRYPTED="$FILE_TO_ENCRYPT.$SUFFIX"
+  fi
+
+  local AES_KEY_ENC="$AES_KEY.$SUFFIX"
   local RM_TMP_PKCS8=0
 
   does_file_exist $RSA_PUB_KEY
@@ -150,7 +159,12 @@ function encrypt() {
 
   # Should we tar it up?
   if [ $ARCH -eq 1 ]; then
-    FILE_ARCH="$UUID.tar.gz"
+    if [ -z $FILE_OUT ]; then
+      FILE_ARCH="$UUID.tar.gz"
+    else
+      FILE_ARCH="$FILE_OUT"   
+    fi
+
     tar zcf $FILE_ARCH $AES_KEY_ENC $FILE_ENCRYPTED && rm $AES_KEY_ENC $FILE_ENCRYPTED 
     [ $QUIET -eq 0 ] && echo "Public Key Used: $RSA_PUB_KEY"
     [ $QUIET -eq 0 ] && echo "Encrypted key and file archive: $FILE_ARCH"
@@ -260,7 +274,7 @@ function main() {
   fi
 }
 
-while getopts "hdp:f:o:a:zvq" options; do
+while getopts "hdp:f:o:a:uzvq" options; do
   case "${options}" in
     h)
       usage
@@ -279,6 +293,9 @@ while getopts "hdp:f:o:a:zvq" options; do
       ;;
     a)
       AES_KEY_ENC=${OPTARG}
+      ;;
+    u)
+      UNIQUE=1
       ;;
     z)
       ARCHIVE=1
